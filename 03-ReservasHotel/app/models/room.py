@@ -149,9 +149,6 @@ class RoomBase(BaseModel):
     """Modelo base para habitaciones."""
 
     room_number: str = Field(..., description="Número de la habitación")
-    room_type: str = Field(..., description="Tipo de habitación")
-    price_per_night: float = Field(..., description="Precio por noche")
-    is_available: bool = Field(True, description="Disponibilidad de la habitación")
     floor: Optional[str] = Field(None, description="Piso de la habitación")
     room_type_id: Optional[UUID] = Field(None, description="ID del tipo de habitación")
     status: RoomStatus = Field(
@@ -163,9 +160,6 @@ class RoomCreate(BaseModel):
     """Modelo para crear una nueva habitación."""
 
     room_number: str = Field(..., description="Número de la habitación")
-    room_type: str = Field(..., description="Tipo de habitación")
-    price_per_night: float = Field(..., description="Precio por noche")
-    is_available: bool = Field(True, description="Disponibilidad de la habitación")
     floor: Optional[str] = Field(None, description="Piso de la habitación")
     room_type_id: Optional[UUID] = Field(None, description="ID del tipo de habitación")
     status: RoomStatus = Field(
@@ -177,9 +171,6 @@ class RoomUpdate(BaseModel):
     """Modelo para actualizar una habitación existente."""
 
     room_number: Optional[str] = None
-    room_type: Optional[str] = None
-    price_per_night: Optional[float] = None
-    is_available: Optional[bool] = None
     floor: Optional[str] = None
     room_type_id: Optional[UUID] = None
     status: Optional[RoomStatus] = None
