@@ -1,27 +1,17 @@
-from fastapi import FastAPI
-
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, APIRouter
 from app.database import test_connection
-from app.endpoints import auth, guests, reservations, rooms
+from app.endpoints import auth, guests, reservations, rooms, users
 from scripts.migrate_database import auto_setup_database
 
-app = FastAPI(
-    title="Hotel Reservations API",
-    description="API para manejar reservas de hotel.",
-    version="1.0.0",
-)
 
-app.include_router(auth.router)
-app.include_router(guests.router)
-app.include_router(rooms.router)
-app.include_router(reservations.router)
-
-
-@app.on_event("startup")
-async def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Evento de inicio de la aplicación.
+    Gestor de ciclo de vida de la aplicación.
 
-    Verifica la conexión a la base de datos y ejecuta la configuración automática.
+    Maneja los eventos de startup y shutdown de forma moderna.
+
     """
     try:
         if test_connection():
@@ -30,8 +20,30 @@ async def startup() -> None:
     except Exception as e:
         print(f"Error durante el inicio: {e}")
 
+    yield
 
-@app.get("/")
+    print("Aplicación cerrándose...")
+
+
+app = FastAPI(
+    title="Hotel Reservations API",
+    description="API para manejar reservas de hotel.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+api_router = APIRouter(prefix="/api")
+
+api_router.include_router(auth.router)
+api_router.include_router(users.router)
+api_router.include_router(guests.router)
+api_router.include_router(rooms.router)
+api_router.include_router(reservations.router)
+
+app.include_router(api_router)
+
+
+@app.get("/", tags=["Root"])
 async def root() -> dict[str, str | list[str]]:
     """
     Endpoint raíz de la API.
@@ -41,5 +53,5 @@ async def root() -> dict[str, str | list[str]]:
     """
     return {
         "message": "Bienvenido a la API de Reservas de Hotel. Visita /docs para ver la documentación.",
-        "endpoints": ["/auth", "/guests", "/rooms", "/reservations"],
+        "endpoints": ["/api/auth", "/api/guests", "/api/rooms", "/api/reservations"],
     }

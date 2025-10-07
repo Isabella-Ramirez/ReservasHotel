@@ -7,5 +7,5 @@ pydantic[email]
 psycopg[binary]
 alembic
 PyJWT[crypto]
-passlib[bcrypt]
+bcrypt
 python-multipart
