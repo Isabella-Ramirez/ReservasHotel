@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.database import test_connection
-from app.endpoints import guests, rooms, reservations
+from app.endpoints import auth, guests, reservations, rooms
 from scripts.migrate_database import auto_setup_database
 
 app = FastAPI(
@@ -10,6 +10,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.include_router(auth.router)
 app.include_router(guests.router)
 app.include_router(rooms.router)
 app.include_router(reservations.router)
@@ -40,5 +41,5 @@ async def root() -> dict[str, str | list[str]]:
     """
     return {
         "message": "Bienvenido a la API de Reservas de Hotel. Visita /docs para ver la documentación.",
-        "endpoints": ["/guests", "/rooms", "/reservations"],
+        "endpoints": ["/auth", "/guests", "/rooms", "/reservations"],
     }

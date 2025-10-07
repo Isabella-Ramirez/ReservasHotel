@@ -6,3 +6,6 @@ pydantic
 pydantic[email]
 psycopg[binary]
 alembic
+PyJWT[crypto]
+passlib[bcrypt]
+python-multipart
