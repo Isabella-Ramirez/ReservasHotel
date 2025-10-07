@@ -10,6 +10,9 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+if DATABASE_URL is None or DATABASE_URL == "":
+    raise ValueError("DATABASE_URL environment variable is not set")
+
 connect_args = {"sslmode": "require", "prepare_threshold": 0}
 
 engine = create_engine(

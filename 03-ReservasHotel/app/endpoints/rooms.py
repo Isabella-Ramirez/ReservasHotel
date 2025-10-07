@@ -64,7 +64,8 @@ def get_rooms(
     if room_type:
         query = query.filter(Room.room_type.ilike(f"%{room_type}%"))
 
-    return query.all()
+    rooms = query.all()
+    return [RoomResponse.model_validate(room) for room in rooms]
 
 
 @router.get("/{room_id}", response_model=RoomResponse)

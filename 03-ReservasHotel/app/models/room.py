@@ -74,11 +74,6 @@ class Room(Base):
         server_default=text("gen_random_uuid()"),
     )
     room_number = Column(String, unique=True, nullable=False)
-    room_type = Column(String, nullable=False)
-    price_per_night = Column(postgresql.NUMERIC(12, 2), nullable=False)
-    is_available = Column(
-        postgresql.BOOLEAN, nullable=False, server_default=text("true")
-    )
     floor = Column(String, nullable=True)
     room_type_id = Column(
         postgresql.UUID(as_uuid=True),
