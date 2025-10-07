@@ -12,8 +12,8 @@ class Settings:
     RELOAD: bool = os.getenv("RELOAD", "true").lower() == "true"
     ENV: str = os.getenv("ENV", "development")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
-    JWT_EXPIRATION_MINUTES: int = int(
-        os.getenv("JWT_EXPIRATION_MINUTES", "30")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
+        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
     )
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 

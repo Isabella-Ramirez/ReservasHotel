@@ -3,38 +3,36 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.rbac import User
+from app.models.user import User
 from config import settings
 
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password using bcrypt."""
-
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Return True if the plain password matches the stored hash."""
-
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def create_access_token(subject: str) -> str:
     """Generate a signed JWT for the given subject."""
 
     now = datetime.now(timezone.utc)
-    expire = now + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
+    expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload: Dict[str, Any] = {
         "user": subject,
         "exp": int(expire.timestamp()),
@@ -59,8 +57,8 @@ def verify_token(token: str) -> Dict[str, Any]:
             detail="El token ha expirado",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
-    #Todo Verificar InvalidTokenError, si sí existe la propiedad
+
+    # Todo Verificar InvalidTokenError, si sí existe la propiedad
     except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
