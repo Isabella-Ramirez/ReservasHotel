@@ -14,7 +14,7 @@ from app.models.reservation import (
     ReservationResponse,
     ReservationStatus,
 )
-from app.models.room import Room
+from app.models.room import Room, RoomType, RoomStatus
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
@@ -29,7 +29,7 @@ def create_reservation(
     Crear una nueva reserva en el sistema.
 
     Valida que el huésped y la habitación existan, calcula el costo total
-    automáticamente y marca la habitación como no disponible.
+    automáticamente y marca la habitación como ocupada.
 
     Args:
         reservation: Datos de la reserva a crear
@@ -48,7 +48,7 @@ def create_reservation(
 
     room = (
         db.query(Room)
-        .filter(Room.id == reservation.room_id, Room.is_available == True)
+        .filter(Room.id == reservation.room_id, Room.status == RoomStatus.AVAILABLE)
         .first()
     )
     if not room:
@@ -60,7 +60,13 @@ def create_reservation(
             status_code=400, detail="Las fechas de reserva no son válidas"
         )
 
-    total = nights * float(room.price_per_night)
+    room_type = db.query(RoomType).filter(RoomType.id == room.room_type_id).first()
+    if not room_type:
+        raise HTTPException(status_code=400, detail="Tipo de habitación no encontrado")
+
+    db.refresh(room_type)
+    base_rate = getattr(room_type, "base_rate")
+    total = nights * float(base_rate)
 
     new_reservation = Reservation(
         guest_id=reservation.guest_id,
@@ -71,7 +77,9 @@ def create_reservation(
         status=ReservationStatus.CONFIRMED,
     )
 
-    room.is_available = False
+    db.query(Room).filter(Room.id == reservation.room_id).update(
+        {"status": RoomStatus.OCCUPIED.value}
+    )
 
     db.add(new_reservation)
     db.commit()
@@ -80,8 +88,8 @@ def create_reservation(
     return new_reservation
 
 
-@router.get("/", response_model=list[ReservationResponse])
-def get_reservations(db: Session = Depends(get_db)) -> list[ReservationResponse]:
+@router.get("", response_model=list[ReservationResponse])
+def get_reservations(db: Session = Depends(get_db)):
     """
     Obtener todas las reservas del sistema.
 
@@ -140,14 +148,20 @@ def cancel_reservation(
     if not reservation:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
 
-    if reservation.status == ReservationStatus.CANCELLED:
+    db.refresh(reservation)
+
+    if str(reservation.status) == ReservationStatus.CANCELLED.value:
         raise HTTPException(status_code=400, detail="La reserva ya está cancelada")
 
-    reservation.status = ReservationStatus.CANCELLED
+    db.query(Reservation).filter(Reservation.id == reservation_id).update(
+        {"status": ReservationStatus.CANCELLED.value}
+    )
 
     room = db.query(Room).filter(Room.id == reservation.room_id).first()
     if room:
-        room.is_available = True
+        db.query(Room).filter(Room.id == reservation.room_id).update(
+            {"status": RoomStatus.AVAILABLE.value}
+        )
 
     db.commit()
     db.refresh(reservation)
@@ -181,10 +195,14 @@ def update_reservation(
     if not reservation:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
 
-    for key, value in reservation_update.dict(exclude_unset=True).items():
+    update_data = reservation_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(reservation, key, value)
 
-    if reservation.check_in_date and reservation.check_out_date:
+    db.flush()
+    db.refresh(reservation)
+
+    if "check_in_date" in update_data or "check_out_date" in update_data:
         nights = (reservation.check_out_date - reservation.check_in_date).days
         if nights <= 0:
             raise HTTPException(
@@ -192,7 +210,13 @@ def update_reservation(
             )
         room = db.query(Room).filter(Room.id == reservation.room_id).first()
         if room:
-            reservation.total_amount = nights * float(room.price_per_night)
+            room_type = (
+                db.query(RoomType).filter(RoomType.id == room.room_type_id).first()
+            )
+            if room_type:
+                db.refresh(room_type)
+                base_rate = getattr(room_type, "base_rate")
+                reservation.total_amount = nights * float(base_rate)
 
     db.commit()
     db.refresh(reservation)
@@ -222,10 +246,14 @@ def delete_reservation(
     if not reservation:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
 
-    if reservation.status == ReservationStatus.CONFIRMED:
+    db.refresh(reservation)
+
+    if str(reservation.status) == ReservationStatus.CONFIRMED.value:
         room = db.query(Room).filter(Room.id == reservation.room_id).first()
         if room:
-            room.is_available = True
+            db.query(Room).filter(Room.id == reservation.room_id).update(
+                {"status": RoomStatus.AVAILABLE.value}
+            )
 
     db.delete(reservation)
     db.commit()

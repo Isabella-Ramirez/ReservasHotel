@@ -10,7 +10,7 @@ from app.models.reservation import Reservation, ReservationStatus
 router = APIRouter(prefix="/guests", tags=["Guests"])
 
 
-@router.post("/", response_model=GuestResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=GuestResponse, status_code=status.HTTP_201_CREATED)
 def create_guest(guest: GuestCreate, db: Session = Depends(get_db)) -> GuestResponse:
     """
     Crear un nuevo huésped en el sistema.
@@ -29,7 +29,7 @@ def create_guest(guest: GuestCreate, db: Session = Depends(get_db)) -> GuestResp
     if existing:
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
-    new_guest = Guest(**guest.dict())
+    new_guest = Guest(**guest.model_dump())
     db.add(new_guest)
     db.commit()
     db.refresh(new_guest)
@@ -37,7 +37,7 @@ def create_guest(guest: GuestCreate, db: Session = Depends(get_db)) -> GuestResp
 
 
 @router.get("/", response_model=list[GuestResponse])
-def get_all_guests(db: Session = Depends(get_db)) -> list[GuestResponse]:
+def get_all_guests(db: Session = Depends(get_db)):
     """
     Obtener todos los huéspedes registrados.
 
@@ -94,7 +94,7 @@ def update_guest(
     if not guest:
         raise HTTPException(status_code=404, detail="Huésped no encontrado")
 
-    for key, value in guest_update.dict(exclude_unset=True).items():
+    for key, value in guest_update.model_dump(exclude_unset=True).items():
         setattr(guest, key, value)
 
     db.commit()

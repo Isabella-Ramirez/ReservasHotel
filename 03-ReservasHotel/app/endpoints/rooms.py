@@ -32,40 +32,44 @@ def create_room(room: RoomCreate, db: Session = Depends(get_db)) -> RoomResponse
     if existing:
         raise HTTPException(status_code=400, detail="El número de habitación ya existe")
 
-    new_room = Room(**room.dict())
+    new_room = Room(**room.model_dump())
     db.add(new_room)
     db.commit()
     db.refresh(new_room)
     return new_room
 
 
-@router.get("/", response_model=list[RoomResponse])
+@router.get("", response_model=list[RoomResponse])
 def get_rooms(
-    available: bool | None = Query(None, description="Filtrar por disponibilidad"),
-    room_type: str | None = Query(None, description="Filtrar por tipo de habitación"),
+    status: str | None = Query(
+        None, description="Filtrar por estado (AVAILABLE, OCCUPIED, etc.)"
+    ),
+    room_type_id: str | None = Query(
+        None, description="Filtrar por ID del tipo de habitación"
+    ),
     db: Session = Depends(get_db),
-) -> list[RoomResponse]:
+):
     """
     Obtener habitaciones con filtros opcionales.
 
-    Permite filtrar por disponibilidad y tipo de habitación.
+    Permite filtrar por estado y tipo de habitación.
 
     Args:
-        available: Filtrar por disponibilidad (True/False)
-        room_type: Filtrar por tipo de habitación (búsqueda parcial)
+        status: Filtrar por estado de la habitación
+        room_type_id: Filtrar por ID del tipo de habitación
         db: Sesión de base de datos
 
     Returns:
         list[RoomResponse]: Lista de habitaciones filtradas
     """
     query = db.query(Room)
-    if available is not None:
-        query = query.filter(Room.is_available == available)
-    if room_type:
-        query = query.filter(Room.room_type.ilike(f"%{room_type}%"))
+    if status is not None:
+        query = query.filter(Room.status == status)
+    if room_type_id:
+        query = query.filter(Room.room_type_id == room_type_id)
 
     rooms = query.all()
-    return [RoomResponse.model_validate(room) for room in rooms]
+    return rooms
 
 
 @router.get("/{room_id}", response_model=RoomResponse)
@@ -111,7 +115,7 @@ def update_room(
     if not room:
         raise HTTPException(status_code=404, detail="Habitación no encontrada")
 
-    for key, value in room_update.dict(exclude_unset=True).items():
+    for key, value in room_update.model_dump(exclude_unset=True).items():
         setattr(room, key, value)
 
     db.commit()
