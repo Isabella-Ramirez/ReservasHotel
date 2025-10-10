@@ -2,9 +2,9 @@ import os
 from typing import Generator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, event
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, with_loader_criteria, ORMExecuteState
 
 load_dotenv()
 
@@ -27,6 +27,16 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def _soft_delete_entities() -> list[type]:
+    """Obtener las entidades que soportan borrado lógico."""
+
+    return [
+        mapper.class_
+        for mapper in Base.registry.mappers
+        if hasattr(mapper.class_, "deleted_at")
+    ]
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -58,3 +68,23 @@ def test_connection() -> bool:
     except Exception as e:
         print(f"Error de conexión a la base de datos: {e}")
         return False
+
+
+@event.listens_for(SessionLocal, "do_orm_execute")
+def apply_soft_delete_filter(execute_state: ORMExecuteState) -> None:
+    """Aplicar filtro global para excluir registros marcados como eliminados."""
+
+    if not execute_state.is_select:
+        return
+
+    if execute_state.execution_options.get("include_deleted", False):
+        return
+
+    for entity in _soft_delete_entities():
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                entity,
+                lambda cls: cls.deleted_at.is_(None),
+                include_aliases=True,
+            )
+        )
