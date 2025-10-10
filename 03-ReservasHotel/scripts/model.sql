@@ -40,8 +40,17 @@ END$$;
 CREATE TABLE IF NOT EXISTS roles (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code         TEXT UNIQUE NOT NULL,      -- e.g. 'ADMIN','RECEPTION','GUEST'
-  name         TEXT NOT NULL
+  name         TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by   UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by   UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at   TIMESTAMPTZ NULL DEFAULT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_roles_deleted_at ON roles (deleted_at);
+CREATE TRIGGER trg_roles_updated_at
+BEFORE UPDATE ON roles
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TABLE IF NOT EXISTS users (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,8 +62,10 @@ CREATE TABLE IF NOT EXISTS users (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by   UUID NULL,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by   UUID NULL
+  updated_by   UUID NULL,
+  deleted_at   TIMESTAMPTZ NULL DEFAULT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users (deleted_at);
 CREATE TRIGGER trg_users_updated_at
 BEFORE UPDATE ON users
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -81,12 +92,14 @@ CREATE TABLE IF NOT EXISTS guests (
   created_by    UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by    UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at    TIMESTAMPTZ NULL DEFAULT NULL,
 
   CONSTRAINT fk_guest_user
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_guests_name ON guests (last_name, first_name);
 CREATE INDEX IF NOT EXISTS idx_guests_email ON guests (email);
+CREATE INDEX IF NOT EXISTS idx_guests_deleted_at ON guests (deleted_at);
 CREATE TRIGGER trg_guests_updated_at
 BEFORE UPDATE ON guests
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -105,8 +118,10 @@ CREATE TABLE IF NOT EXISTS room_types (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by         UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by         UUID NULL REFERENCES users(id) ON DELETE SET NULL
+  updated_by         UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at         TIMESTAMPTZ NULL DEFAULT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_room_types_deleted_at ON room_types (deleted_at);
 CREATE TRIGGER trg_room_types_updated_at
 BEFORE UPDATE ON room_types
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -120,9 +135,11 @@ CREATE TABLE IF NOT EXISTS rooms (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by    UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by    UUID NULL REFERENCES users(id) ON DELETE SET NULL
+  updated_by    UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at    TIMESTAMPTZ NULL DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rooms_type ON rooms(room_type_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_deleted_at ON rooms (deleted_at);
 CREATE TRIGGER trg_rooms_updated_at
 BEFORE UPDATE ON rooms
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -143,10 +160,12 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at      TIMESTAMPTZ NULL DEFAULT NULL,
 
   CONSTRAINT chk_res_dates CHECK (checkout_date > checkin_date)
 );
 CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(checkin_date, checkout_date);
+CREATE INDEX IF NOT EXISTS idx_reservations_deleted_at ON reservations (deleted_at);
 CREATE TRIGGER trg_reservations_updated_at
 BEFORE UPDATE ON reservations
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -192,9 +211,11 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL
+  updated_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at      TIMESTAMPTZ NULL DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_payments_res ON payments(reservation_id);
+CREATE INDEX IF NOT EXISTS idx_payments_deleted_at ON payments (deleted_at);
 CREATE TRIGGER trg_payments_updated_at
 BEFORE UPDATE ON payments
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();

@@ -23,9 +23,15 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('code', sa.Text(), nullable=False),
         sa.Column('name', sa.Text(), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
+        sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
+        sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_roles')),
         sa.UniqueConstraint('code', name=op.f('uq_roles_code'))
     )
+    op.create_index('idx_roles_deleted_at', 'roles', ['deleted_at'], unique=False)
 
     # users
     op.create_table(
@@ -40,10 +46,12 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
         sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_users')),
         sa.UniqueConstraint('email', name=op.f('uq_users_email')),
         sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ondelete='RESTRICT', name=op.f('fk_users_role_id_roles'))
     )
+    op.create_index('idx_users_deleted_at', 'users', ['deleted_at'], unique=False)
 
     # guests
     op.create_table(
@@ -64,11 +72,13 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
         sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL', name=op.f('fk_guests_user_id_users')),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_guests'))
     )
     op.create_index('idx_guests_name', 'guests', ['last_name', 'first_name'], unique=False)
     op.create_index('idx_guests_email', 'guests', ['email'], unique=False)
+    op.create_index('idx_guests_deleted_at', 'guests', ['deleted_at'], unique=False)
 
     # room_types
     op.create_table(
@@ -84,9 +94,11 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
         sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_room_types')),
         sa.UniqueConstraint('code', name=op.f('uq_room_types_code'))
     )
+    op.create_index('idx_room_types_deleted_at', 'room_types', ['deleted_at'], unique=False)
 
     # rooms
     op.create_table(
@@ -100,11 +112,13 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
         sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_rooms')),
         sa.UniqueConstraint('room_number', name=op.f('uq_rooms_room_number')),
         sa.ForeignKeyConstraint(['room_type_id'], ['room_types.id'], ondelete='RESTRICT', name=op.f('fk_rooms_room_type_id_room_types'))
     )
     op.create_index('idx_rooms_type', 'rooms', ['room_type_id'], unique=False)
+    op.create_index('idx_rooms_deleted_at', 'rooms', ['deleted_at'], unique=False)
 
     # reservations
     op.create_table(
@@ -120,11 +134,13 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
         sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_reservations')),
         sa.UniqueConstraint('code', name=op.f('uq_reservations_code'))
     )
     op.create_check_constraint('chk_res_dates', 'reservations', 'checkout_date > checkin_date')
     op.create_index('idx_reservations_dates', 'reservations', ['checkin_date', 'checkout_date'], unique=False)
+    op.create_index('idx_reservations_deleted_at', 'reservations', ['deleted_at'], unique=False)
 
     # reservation_guests
     op.create_table(
@@ -176,13 +192,20 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()'), nullable=False),
         sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_payments')),
         sa.ForeignKeyConstraint(['reservation_id'], ['reservations.id'], ondelete='CASCADE', name=op.f('fk_payments_reservation_id_reservations'))
     )
     op.create_index('idx_payments_res', 'payments', ['reservation_id'], unique=False)
+    op.create_index('idx_payments_deleted_at', 'payments', ['deleted_at'], unique=False)
+
+    # Add foreign keys for audit fields in roles table (after users table is created)
+    op.create_foreign_key('fk_roles_created_by_users', 'roles', 'users', ['created_by'], ['id'], ondelete='SET NULL')
+    op.create_foreign_key('fk_roles_updated_by_users', 'roles', 'users', ['updated_by'], ['id'], ondelete='SET NULL')
 
 
 def downgrade() -> None:
+    op.drop_index('idx_payments_deleted_at', table_name='payments')
     op.drop_index('idx_payments_res', table_name='payments')
     op.drop_table('payments')
 
@@ -194,18 +217,26 @@ def downgrade() -> None:
     op.drop_index('idx_res_guest_guest', table_name='reservation_guests')
     op.drop_table('reservation_guests')
 
+    op.drop_index('idx_reservations_deleted_at', table_name='reservations')
     op.drop_index('idx_reservations_dates', table_name='reservations')
     op.drop_constraint('chk_res_dates', 'reservations', type_='check')
     op.drop_table('reservations')
 
+    op.drop_index('idx_rooms_deleted_at', table_name='rooms')
     op.drop_index('idx_rooms_type', table_name='rooms')
     op.drop_table('rooms')
 
+    op.drop_index('idx_room_types_deleted_at', table_name='room_types')
     op.drop_table('room_types')
 
+    op.drop_index('idx_guests_deleted_at', table_name='guests')
     op.drop_index('idx_guests_email', table_name='guests')
     op.drop_index('idx_guests_name', table_name='guests')
     op.drop_table('guests')
 
+    op.drop_index('idx_users_deleted_at', table_name='users')
     op.drop_table('users')
+    op.drop_constraint('fk_roles_updated_by_users', 'roles', type_='foreignkey')
+    op.drop_constraint('fk_roles_created_by_users', 'roles', type_='foreignkey')
+    op.drop_index('idx_roles_deleted_at', table_name='roles')
     op.drop_table('roles')
