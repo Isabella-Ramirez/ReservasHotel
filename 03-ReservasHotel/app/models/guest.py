@@ -74,6 +74,11 @@ class Guest(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
 
 
 class GuestBase(BaseModel):

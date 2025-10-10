@@ -56,6 +56,11 @@ class RoomType(Base):
         nullable=False,
     )
     updated_by = Column(postgresql.UUID(as_uuid=True), nullable=True)
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
 
 
 class Room(Base):
@@ -103,6 +108,11 @@ class Room(Base):
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
     )
 
 

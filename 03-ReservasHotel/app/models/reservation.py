@@ -98,6 +98,11 @@ class Reservation(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
 
 
 class ReservationGuest(Base):
@@ -213,6 +218,11 @@ class Payment(Base):
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
     )
 
 

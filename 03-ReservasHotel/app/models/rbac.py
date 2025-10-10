@@ -1,5 +1,9 @@
-from pydantic import BaseModel
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean
+from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+from sqlalchemy import Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql import func, text
 from app.database import Base
@@ -16,6 +20,32 @@ class Role(Base):
     )
     code = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    created_by = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    updated_by = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
 
 
 class TokenResponse(BaseModel):
@@ -23,3 +53,34 @@ class TokenResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+
+class RoleBase(BaseModel):
+    """Campos compartidos entre las operaciones relacionadas con roles."""
+
+    code: str = Field(..., min_length=2, max_length=50)
+    name: str = Field(..., min_length=2, max_length=100)
+
+
+class RoleCreate(RoleBase):
+    """Modelo para crear nuevos roles."""
+
+
+class RoleUpdate(BaseModel):
+    """Campos permitidos para actualizar un rol existente."""
+
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+
+
+class RoleResponse(RoleBase):
+    """Modelo de respuesta para roles."""
+
+    id: UUID
+    created_at: datetime
+    created_by: Optional[UUID] = None
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[UUID] = None
+    deleted_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
