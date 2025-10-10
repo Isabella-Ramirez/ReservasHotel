@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter
 from app.database import test_connection
 from app.endpoints import auth, guests, reservations, rooms, users
+from app.middleware.auth_middleware import AuthMiddleware
 from scripts.migrate_database import auto_setup_database
 
 
@@ -30,7 +31,16 @@ app = FastAPI(
     description="API para manejar reservas de hotel.",
     version="1.0.0",
     lifespan=lifespan,
+    swagger_ui_parameters={
+        "persistAuthorization": True
+    }
 )
+
+"""
+Agrega el middleware de autenticación a la aplicación FastAPI.
+Este middleware protege los endpoints según las reglas definidas en AuthMiddleware.
+"""
+app.add_middleware(AuthMiddleware)
 
 api_router = APIRouter(prefix="/api")
 

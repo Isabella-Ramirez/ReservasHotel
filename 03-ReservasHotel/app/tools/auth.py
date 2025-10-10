@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -14,7 +14,7 @@ from app.models.user import User
 from config import settings
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+security = HTTPBearer()
 
 
 def get_password_hash(password: str) -> str:
@@ -68,12 +68,12 @@ def verify_token(token: str) -> Dict[str, Any]:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
     """Retrieve the current user from the provided JWT bearer token."""
 
-    payload = verify_token(token)
+    payload = verify_token(credentials.credentials)
     subject: Optional[str] = payload.get("user")
     if not subject:
         raise HTTPException(
