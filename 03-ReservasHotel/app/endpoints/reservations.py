@@ -1,7 +1,6 @@
-from datetime import date
+from datetime import datetime, timezone
 from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -15,15 +14,18 @@ from app.models.reservation import (
     ReservationStatus,
 )
 from app.models.room import Room, RoomType, RoomStatus
+from app.tools.auth import get_current_user_id
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
 
 @router.post(
-    "/", response_model=ReservationResponse, status_code=status.HTTP_201_CREATED
+    "", response_model=ReservationResponse, status_code=status.HTTP_201_CREATED
 )
 def create_reservation(
-    reservation: ReservationCreate, db: Session = Depends(get_db)
+    reservation: ReservationCreate,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> ReservationResponse:
     """
     Crear una nueva reserva en el sistema.
@@ -42,13 +44,18 @@ def create_reservation(
         HTTPException: Si el huésped no existe, la habitación no está disponible
                       o las fechas no son válidas
     """
+    current_user_id = get_current_user_id(request)
+
     guest = db.query(Guest).filter(Guest.id == reservation.guest_id).first()
     if not guest:
         raise HTTPException(status_code=404, detail="Huésped no encontrado")
 
     room = (
         db.query(Room)
-        .filter(Room.id == reservation.room_id, Room.status == RoomStatus.AVAILABLE)
+        .filter(
+            Room.id == reservation.room_id,
+            Room.status == RoomStatus.AVAILABLE.value,
+        )
         .first()
     )
     if not room:
@@ -74,12 +81,16 @@ def create_reservation(
         check_in_date=reservation.check_in_date,
         check_out_date=reservation.check_out_date,
         total_amount=total,
-        status=ReservationStatus.CONFIRMED,
+        status=ReservationStatus.CONFIRMED.value,
+        created_by=current_user_id,
+        updated_by=current_user_id,
     )
 
-    db.query(Room).filter(Room.id == reservation.room_id).update(
-        {"status": RoomStatus.OCCUPIED.value}
-    )
+    for key, value in {
+        "status": RoomStatus.OCCUPIED.value,
+        "updated_by": current_user_id,
+    }.items():
+        setattr(room, key, value)
 
     db.add(new_reservation)
     db.commit()
@@ -127,7 +138,9 @@ def get_reservation(
 
 @router.put("/{reservation_id}/cancel", response_model=ReservationResponse)
 def cancel_reservation(
-    reservation_id: UUID, db: Session = Depends(get_db)
+    reservation_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> ReservationResponse:
     """
     Cancelar una reserva existente.
@@ -136,6 +149,7 @@ def cancel_reservation(
 
     Args:
         reservation_id: ID único de la reserva
+        request: Request object para obtener usuario del middleware
         db: Sesión de base de datos
 
     Returns:
@@ -144,6 +158,7 @@ def cancel_reservation(
     Raises:
         HTTPException: Si la reserva no existe o ya está cancelada
     """
+    current_user_id = get_current_user_id(request)
     reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
@@ -153,15 +168,19 @@ def cancel_reservation(
     if str(reservation.status) == ReservationStatus.CANCELLED.value:
         raise HTTPException(status_code=400, detail="La reserva ya está cancelada")
 
-    db.query(Reservation).filter(Reservation.id == reservation_id).update(
-        {"status": ReservationStatus.CANCELLED.value}
-    )
+    for key, value in {
+        "status": ReservationStatus.CANCELLED.value,
+        "updated_by": current_user_id,
+    }.items():
+        setattr(reservation, key, value)
 
     room = db.query(Room).filter(Room.id == reservation.room_id).first()
     if room:
-        db.query(Room).filter(Room.id == reservation.room_id).update(
-            {"status": RoomStatus.AVAILABLE.value}
-        )
+        for key, value in {
+            "status": RoomStatus.AVAILABLE.value,
+            "updated_by": current_user_id,
+        }.items():
+            setattr(room, key, value)
 
     db.commit()
     db.refresh(reservation)
@@ -172,6 +191,7 @@ def cancel_reservation(
 def update_reservation(
     reservation_id: UUID,
     reservation_update: ReservationUpdate,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> ReservationResponse:
     """
@@ -183,6 +203,7 @@ def update_reservation(
     Args:
         reservation_id: ID único de la reserva
         reservation_update: Datos a actualizar
+        request: Request object para obtener usuario del middleware
         db: Sesión de base de datos
 
     Returns:
@@ -191,6 +212,7 @@ def update_reservation(
     Raises:
         HTTPException: Si la reserva no existe o las fechas no son válidas
     """
+    current_user_id = get_current_user_id(request)
     reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
@@ -218,6 +240,8 @@ def update_reservation(
                 base_rate = getattr(room_type, "base_rate")
                 reservation.total_amount = nights * float(base_rate)
 
+    setattr(reservation, "updated_by", current_user_id)
+
     db.commit()
     db.refresh(reservation)
     return reservation
@@ -225,7 +249,9 @@ def update_reservation(
 
 @router.delete("/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_reservation(
-    reservation_id: UUID, db: Session = Depends(get_db)
+    reservation_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> JSONResponse:
     """
     Eliminar una reserva del sistema.
@@ -234,6 +260,7 @@ def delete_reservation(
 
     Args:
         reservation_id: ID único de la reserva
+        request: Request object para obtener usuario del middleware
         db: Sesión de base de datos
 
     Returns:
@@ -242,6 +269,7 @@ def delete_reservation(
     Raises:
         HTTPException: Si la reserva no existe
     """
+    current_user_id = get_current_user_id(request)
     reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
@@ -251,10 +279,19 @@ def delete_reservation(
     if str(reservation.status) == ReservationStatus.CONFIRMED.value:
         room = db.query(Room).filter(Room.id == reservation.room_id).first()
         if room:
-            db.query(Room).filter(Room.id == reservation.room_id).update(
-                {"status": RoomStatus.AVAILABLE.value}
-            )
+            for key, value in {
+                "status": RoomStatus.AVAILABLE.value,
+                "updated_by": current_user_id,
+            }.items():
+                setattr(room, key, value)
 
-    db.delete(reservation)
+    current_time = datetime.now(timezone.utc)
+    for key, value in {
+        "status": ReservationStatus.CANCELLED.value,
+        "deleted_at": current_time,
+        "updated_by": current_user_id,
+    }.items():
+        setattr(reservation, key, value)
+
     db.commit()
     return JSONResponse(content={"detail": "Reserva eliminada correctamente"})

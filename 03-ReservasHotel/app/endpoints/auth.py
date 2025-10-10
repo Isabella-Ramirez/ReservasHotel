@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -33,7 +33,8 @@ def login_user(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenRe
 
 
 @router.get("/me", response_model=UserResponse)
-def read_current_user(current_user: User = Depends(get_current_user)) -> UserResponse:
+def read_current_user(request: Request, db: Session = Depends(get_db)) -> UserResponse:
     """Obtener los datos del usuario autenticado."""
-
+    
+    current_user = get_current_user(request, db)
     return current_user

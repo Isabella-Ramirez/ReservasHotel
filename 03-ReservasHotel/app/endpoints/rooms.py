@@ -1,18 +1,23 @@
+from datetime import datetime, timezone
 from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomCreate, RoomUpdate, RoomResponse
+from app.tools.auth import get_current_user_id
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
 
-@router.post("/", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)
-def create_room(room: RoomCreate, db: Session = Depends(get_db)) -> RoomResponse:
+@router.post("", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)
+def create_room(
+    room: RoomCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RoomResponse:
     """
     Crear una nueva habitación en el sistema.
 
@@ -20,6 +25,7 @@ def create_room(room: RoomCreate, db: Session = Depends(get_db)) -> RoomResponse
 
     Args:
         room: Datos de la habitación a crear
+        request: Request object para obtener usuario del middleware
         db: Sesión de base de datos
 
     Returns:
@@ -32,7 +38,13 @@ def create_room(room: RoomCreate, db: Session = Depends(get_db)) -> RoomResponse
     if existing:
         raise HTTPException(status_code=400, detail="El número de habitación ya existe")
 
-    new_room = Room(**room.model_dump())
+    current_user_id = get_current_user_id(request)
+
+    new_room = Room(
+        **room.model_dump(),
+        created_by=current_user_id,
+        updated_by=current_user_id,
+    )
     db.add(new_room)
     db.commit()
     db.refresh(new_room)
@@ -95,13 +107,17 @@ def get_room(room_id: UUID, db: Session = Depends(get_db)) -> RoomResponse:
 
 @router.put("/{room_id}", response_model=RoomResponse)
 def update_room(
-    room_id: UUID, room_update: RoomUpdate, db: Session = Depends(get_db)
+    room_id: UUID,
+    room_update: RoomUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> RoomResponse:
     """
     Actualizar los datos de una habitación existente.
 
     Args:
         room_id: ID único de la habitación
+        request: Request object para obtener usuario del middleware
         room_update: Datos a actualizar
         db: Sesión de base de datos
 
@@ -111,11 +127,16 @@ def update_room(
     Raises:
         HTTPException: Si la habitación no existe
     """
+    current_user_id = get_current_user_id(request)
+
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Habitación no encontrada")
 
-    for key, value in room_update.model_dump(exclude_unset=True).items():
+    update_data = room_update.model_dump(exclude_unset=True)
+    update_data["updated_by"] = current_user_id
+
+    for key, value in update_data.items():
         setattr(room, key, value)
 
     db.commit()
@@ -124,7 +145,11 @@ def update_room(
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_room(room_id: UUID, db: Session = Depends(get_db)) -> JSONResponse:
+def delete_room(
+    room_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
     """
     Eliminar una habitación del sistema.
 
@@ -132,6 +157,7 @@ def delete_room(room_id: UUID, db: Session = Depends(get_db)) -> JSONResponse:
 
     Args:
         room_id: ID único de la habitación
+        request: Request object para obtener usuario del middleware
         db: Sesión de base de datos
 
     Returns:
@@ -140,6 +166,8 @@ def delete_room(room_id: UUID, db: Session = Depends(get_db)) -> JSONResponse:
     Raises:
         HTTPException: Si la habitación no existe o tiene reservas activas
     """
+    current_user_id = get_current_user_id(request)
+
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Habitación no encontrada")
@@ -160,6 +188,9 @@ def delete_room(room_id: UUID, db: Session = Depends(get_db)) -> JSONResponse:
             detail="No se puede eliminar la habitación con reservas activas",
         )
 
-    db.delete(room)
+    current_time = datetime.now(timezone.utc)
+    setattr(room, "deleted_at", current_time)
+    setattr(room, "updated_by", current_user_id)
+
     db.commit()
     return JSONResponse(content={"detail": "Habitación eliminada correctamente"})
