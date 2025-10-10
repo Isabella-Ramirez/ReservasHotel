@@ -5,16 +5,11 @@ from typing import Any, Dict, Optional
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.models.user import User
 from config import settings
-
-
-security = HTTPBearer()
 
 
 def get_password_hash(password: str) -> str:
@@ -67,27 +62,61 @@ def verify_token(token: str) -> Dict[str, Any]:
         )
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
-) -> User:
-    """Retrieve the current user from the provided JWT bearer token."""
-
-    payload = verify_token(credentials.credentials)
-    subject: Optional[str] = payload.get("user")
-    if not subject:
+def get_current_user_id(request: Request) -> str:
+    """
+    Obtiene el ID del usuario actual desde el middleware.
+    
+    Args:
+        request: Request object de FastAPI
+        
+    Returns:
+        str: ID del usuario autenticado
+        
+    Raises:
+        HTTPException: Si no hay usuario autenticado
+    """
+    user_id = getattr(request.state, 'user_id', None)
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Usuario no autorizado - token requerido",
+            headers={"WWW-Authenticate": "Bearer"}
         )
+    return user_id
 
-    user = db.query(User).filter(User.id == subject).first()
-    if not user or user.is_active is False:
+
+def get_current_user(request: Request, db: Session) -> User:
+    """
+    Obtiene el usuario completo autenticado desde el middleware.
+    
+    Args:
+        request: Request object de FastAPI
+        db: Sesión de base de datos
+        
+    Returns:
+        User: Usuario autenticado completo
+        
+    Raises:
+        HTTPException: Si no hay usuario autenticado o no existe en BD
+    """
+    user_id = get_current_user_id(request)
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario no autorizado",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Usuario no encontrado",
+            headers={"WWW-Authenticate": "Bearer"}
         )
-
+    
+    if user.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario inactivo",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
     return user
+
+
+

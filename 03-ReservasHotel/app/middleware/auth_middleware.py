@@ -91,8 +91,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return False
         if any(path.startswith(protected) for protected in self.protected_paths):
             return True
-        if any(path.startswith(read_path) for read_path in self.read_only_paths):
-            return method in self.protected_methods
         return method in self.protected_methods
 
     def _extract_token(self, request: Request) -> str | None:
@@ -131,7 +129,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             db = next(get_db())
             user = db.query(User).filter(User.id == user_id).first()
-            if not user or not user.is_active:
+            if not user or user.is_active is False:
                 return False
             return True
         except Exception:
@@ -158,10 +156,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
 
-def get_current_user_from_middleware(request: Request) -> str | None:
-    """
-    Obtiene el ID del usuario actual desde el middleware.
-    Útil para usar en los endpoints.
-    """
-    return getattr(request.state, 'user_id', None)
+
 
