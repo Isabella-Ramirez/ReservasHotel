@@ -268,7 +268,6 @@ class ReservationUpdate(BaseModel):
     room_id: Optional[UUID] = None
     check_in_date: Optional[date] = None
     check_out_date: Optional[date] = None
-    total_amount: Optional[float] = None
     status: Optional[ReservationStatus] = None
 
 

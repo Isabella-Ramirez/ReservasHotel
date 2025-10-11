@@ -2,17 +2,26 @@ from datetime import datetime, timezone
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.rbac import Role, RoleCreate, RoleResponse, RoleUpdate
 from app.tools.auth import get_current_user_id
+from app.tools.error_handlers import (
+    handle_database_errors,
+    validate_resource_exists,
+    validate_unique_field,
+    validate_resource_not_deleted,
+    get_custom_message,
+)
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
 
 @router.post("", response_model=RoleResponse, status_code=status.HTTP_201_CREATED)
+@handle_database_errors
 def create_role(
     role_data: RoleCreate,
     request: Request,
@@ -36,17 +45,14 @@ def create_role(
 
     current_user_id = get_current_user_id(request)
 
-    existing = (
-        db.query(Role)
-        .execution_options(include_deleted=True)
-        .filter(Role.code == role_data.code)
-        .first()
+    validate_unique_field(
+        db=db,
+        model_class=Role,
+        field_name="code",
+        field_value=role_data.code,
+        error_message=get_custom_message("Role", "code_unique"),
+        include_deleted=True,
     )
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El código del rol ya está en uso",
-        )
 
     role = Role(
         code=role_data.code,
@@ -61,6 +67,7 @@ def create_role(
 
 
 @router.get("", response_model=List[RoleResponse])
+@handle_database_errors
 def list_roles(
     include_deleted: bool = Query(
         False,
@@ -91,6 +98,7 @@ def list_roles(
 
 
 @router.get("/{role_id}", response_model=RoleResponse)
+@handle_database_errors
 def get_role(
     role_id: UUID,
     db: Session = Depends(get_db),
@@ -109,15 +117,12 @@ def get_role(
     """
 
     role = db.query(Role).filter(Role.id == role_id).first()
-    if not role:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Rol no encontrado",
-        )
+    role = validate_resource_exists(role, get_custom_message("Role", "not_found"))
     return RoleResponse.model_validate(role)
 
 
 @router.put("/{role_id}", response_model=RoleResponse)
+@handle_database_errors
 def update_role(
     role_id: UUID,
     role_data: RoleUpdate,
@@ -151,17 +156,8 @@ def update_role(
         .filter(Role.id == role_id)
         .first()
     )
-    if not role:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Rol no encontrado",
-        )
-
-    if role.deleted_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No es posible actualizar un rol eliminado",
-        )
+    role = validate_resource_exists(role, get_custom_message("Role", "not_found"))
+    validate_resource_not_deleted(role, "rol")
 
     update_data = role_data.model_dump(exclude_unset=True)
 
@@ -176,15 +172,16 @@ def update_role(
 
 
 @router.delete("/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
+@handle_database_errors
 def delete_role(
     role_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-) -> None:
+) -> JSONResponse:
     """Eliminar (soft delete) un rol.
 
     Marca `deleted_at` y registra la auditoría. Si el rol ya está eliminado
-    no realiza ninguna acción.
+    responde con error.
 
     Args:
         role_id: ID del rol.
@@ -196,23 +193,18 @@ def delete_role(
 
     Raises:
         HTTPException: 404 si no existe el rol.
+        HTTPException: 400 si el rol ya está eliminado.
     """
 
     current_user_id = get_current_user_id(request)
 
     role = db.query(Role).filter(Role.id == role_id).first()
-    if not role:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Rol no encontrado",
-        )
-
-    if role.deleted_at is not None:
-        return
+    role = validate_resource_exists(role, get_custom_message("Role", "not_found"))
+    validate_resource_not_deleted(role, "rol")
 
     current_time = datetime.now(timezone.utc)
     setattr(role, "deleted_at", current_time)
     setattr(role, "updated_by", current_user_id)
 
     db.commit()
-    return None
+    return JSONResponse(content={"detail": "Rol eliminado correctamente"})

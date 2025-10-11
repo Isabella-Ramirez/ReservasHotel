@@ -2,16 +2,26 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserCreate, UserResponse, UserUpdate
 from app.tools.auth import get_password_hash, get_current_user_id
+from app.tools.error_handlers import (
+    handle_database_errors,
+    validate_resource_exists,
+    validate_unique_field,
+    validate_not_self_action,
+    validate_resource_not_deleted,
+    get_custom_message,
+)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@handle_database_errors
 def create_user(
     user_data: UserCreate,
     request: Request,
@@ -29,16 +39,17 @@ def create_user(
         UserResponse: Usuario creado
 
     Raises:
-        HTTPException: Si el correo ya está registrado
+        HTTPException: Si hay errores de validación, email duplicado o role_id inválido
     """
     current_user_id = get_current_user_id(request)
-    
-    existing = db.query(User).filter(User.email == user_data.email).first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El correo ya está registrado",
-        )
+
+    validate_unique_field(
+        db=db,
+        model_class=User,
+        field_name="email",
+        field_value=user_data.email,
+        error_message=get_custom_message("User", "email_unique"),
+    )
 
     user = User(
         email=user_data.email,
@@ -56,6 +67,7 @@ def create_user(
 
 
 @router.get("", response_model=List[UserResponse])
+@handle_database_errors
 def get_users(
     is_active: Optional[bool] = Query(None, description="Filtrar por estado activo"),
     db: Session = Depends(get_db),
@@ -80,6 +92,7 @@ def get_users(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
+@handle_database_errors
 def get_user(
     user_id: UUID,
     db: Session = Depends(get_db),
@@ -98,14 +111,11 @@ def get_user(
         HTTPException: Si el usuario no existe
     """
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado"
-        )
-    return user
+    return validate_resource_exists(user, get_custom_message("User", "not_found"))
 
 
 @router.put("/{user_id}", response_model=UserResponse)
+@handle_database_errors
 def update_user(
     user_id: UUID,
     user_data: UserUpdate,
@@ -125,23 +135,22 @@ def update_user(
         UserResponse: Usuario actualizado
 
     Raises:
-        HTTPException: Si el usuario no existe o el email ya está en uso
+        HTTPException: Si el usuario no existe, email duplicado o datos inválidos
     """
     current_user_id = get_current_user_id(request)
-    
+
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado"
-        )
+    user = validate_resource_exists(user, get_custom_message("User", "not_found"))
 
     if user_data.email and user_data.email != user.email:
-        existing = db.query(User).filter(User.email == user_data.email).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El correo ya está registrado",
-            )
+        validate_unique_field(
+            db=db,
+            model_class=User,
+            field_name="email",
+            field_value=user_data.email,
+            exclude_id=user_id,
+            error_message=get_custom_message("User", "email_unique"),
+        )
 
     update_data = user_data.model_dump(exclude_unset=True)
 
@@ -159,11 +168,12 @@ def update_user(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@handle_database_errors
 def delete_user(
     user_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-) -> None:
+) -> JSONResponse:
     """
     Eliminar un usuario (soft delete - marcar como inactivo).
 
@@ -173,21 +183,20 @@ def delete_user(
         db: Sesión de base de datos
 
     Raises:
-        HTTPException: Si el usuario no existe o si intenta eliminarse a sí mismo
+        HTTPException: Si el usuario no existe, auto-eliminación o errores de BD
     """
     current_user_id = get_current_user_id(request)
-    
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado"
-        )
 
-    if str(user.id) == str(current_user_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No puedes eliminar tu propia cuenta",
-        )
+    user = db.query(User).filter(User.id == user_id).first()
+    user = validate_resource_exists(user, get_custom_message("User", "not_found"))
+
+    validate_not_self_action(
+        current_user_id=current_user_id,
+        target_user_id=str(user.id),
+        detail=get_custom_message("User", "self_delete"),
+    )
+
+    validate_resource_not_deleted(user, "usuario")
 
     current_time = datetime.now(timezone.utc)
     setattr(user, "is_active", False)
@@ -195,3 +204,4 @@ def delete_user(
     setattr(user, "updated_by", current_user_id)
 
     db.commit()
+    return JSONResponse(content={"detail": "Usuario eliminado correctamente"})

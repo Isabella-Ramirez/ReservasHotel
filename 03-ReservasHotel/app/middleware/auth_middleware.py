@@ -20,13 +20,13 @@ from app.models.user import User
 class AuthMiddleware(BaseHTTPMiddleware):
     """
     Middleware que maneja la autenticación automáticamente.
-    
+
     Reglas de protección:
     - GET en rutas públicas: Sin autenticación
     - POST, PUT, DELETE: Requieren autenticación
     - Rutas específicas: Configuración personalizada
     """
-    
+
     def __init__(self, app):
         """
         Inicializa el middleware de autenticación con las rutas públicas, protegidas y métodos protegidos.
@@ -34,20 +34,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
             app: Instancia de la aplicación FastAPI.
         """
         super().__init__(app)
-        
+
         self.public_paths = {
             "/",
             "/docs",
-            "/redoc", 
+            "/redoc",
             "/openapi.json",
             "/api/auth/login",
         }
         self.protected_paths = {
             "/api/auth/me",
             "/api/rooms",
-            "/api/guests", 
+            "/api/guests",
             "/api/reservations",
-            "/api/users"
+            "/api/users",
         }
         self.protected_methods = {"POST", "PUT", "DELETE", "PATCH"}
 
@@ -57,12 +57,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         path = request.url.path
         method = request.method
-        
+
         if self._requires_auth(path, method):
             try:
                 token = self._extract_token(request)
                 if not token:
-                    return self._unauthorized_response("Token de autorización requerido")
+                    return self._unauthorized_response(
+                        "Token de autorización requerido"
+                    )
                 payload = verify_token(token)
                 user_id = payload.get("user")
                 if not user_id:
@@ -75,11 +77,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     status_code=e.status_code,
                     content={"detail": e.detail},
-                    headers=e.headers
+                    headers=e.headers,
                 )
             except Exception as e:
                 return self._unauthorized_response("Error de autenticación")
-       
+
         response = await call_next(request)
         return response
 
@@ -107,12 +109,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return None
-            
-        
+
         parts = auth_header.split(" ")
         if len(parts) != 2 or parts[0].lower() != "bearer":
             return None
-            
+
         return parts[1]
 
     def _is_user_valid(self, user_id: str) -> bool:
@@ -135,7 +136,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         except Exception:
             return False
         finally:
-            if 'db' in locals():
+            if "db" in locals():
                 db.close()
 
     def _unauthorized_response(self, message: str) -> JSONResponse:
@@ -152,9 +153,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": message},
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
-
-
-
-

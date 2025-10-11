@@ -8,11 +8,19 @@ from app.database import get_db
 from app.models.guest import Guest, GuestCreate, GuestUpdate, GuestResponse
 from app.models.reservation import Reservation, ReservationStatus
 from app.tools.auth import get_current_user_id
+from app.tools.error_handlers import (
+    handle_database_errors,
+    validate_resource_exists,
+    validate_unique_field,
+    validate_resource_not_deleted,
+    get_custom_message,
+)
 
 router = APIRouter(prefix="/guests", tags=["Guests"])
 
 
 @router.post("", response_model=GuestResponse, status_code=status.HTTP_201_CREATED)
+@handle_database_errors
 def create_guest(
     guest: GuestCreate,
     request: Request,
@@ -30,13 +38,25 @@ def create_guest(
         GuestResponse: Datos del huésped creado
 
     Raises:
-        HTTPException: Si el email ya está registrado
+        HTTPException: Si los datos ya existen o hay errores de validación
     """
     current_user_id = get_current_user_id(request)
-    
-    existing = db.query(Guest).filter(Guest.email == guest.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="El email ya está registrado")
+
+    validate_unique_field(
+        db=db,
+        model_class=Guest,
+        field_name="email",
+        field_value=guest.email,
+        error_message=get_custom_message("Guest", "email_unique"),
+    )
+
+    validate_unique_field(
+        db=db,
+        model_class=Guest,
+        field_name="document_no",
+        field_value=guest.document_no,
+        error_message=get_custom_message("Guest", "document_unique"),
+    )
 
     new_guest = Guest(
         **guest.model_dump(),
@@ -48,8 +68,8 @@ def create_guest(
     db.refresh(new_guest)
     return new_guest
 
-
 @router.get("", response_model=list[GuestResponse])
+@handle_database_errors
 def get_all_guests(db: Session = Depends(get_db)):
     """
     Obtener todos los huéspedes registrados.
@@ -63,8 +83,8 @@ def get_all_guests(db: Session = Depends(get_db)):
     guests = db.query(Guest).all()
     return guests
 
-
 @router.get("/{guest_id}", response_model=GuestResponse)
+@handle_database_errors
 def get_guest(guest_id: UUID, db: Session = Depends(get_db)) -> GuestResponse:
     """
     Obtener un huésped específico por su ID.
@@ -80,12 +100,12 @@ def get_guest(guest_id: UUID, db: Session = Depends(get_db)) -> GuestResponse:
         HTTPException: Si el huésped no existe
     """
     guest = db.query(Guest).filter(Guest.id == guest_id).first()
-    if not guest:
-        raise HTTPException(status_code=404, detail="Huésped no encontrado")
+    guest = validate_resource_exists(guest, get_custom_message("Guest", "not_found"))
     return guest
 
 
 @router.put("/{guest_id}", response_model=GuestResponse)
+@handle_database_errors
 def update_guest(
     guest_id: UUID,
     guest_update: GuestUpdate,
@@ -105,16 +125,35 @@ def update_guest(
         GuestResponse: Datos actualizados del huésped
 
     Raises:
-        HTTPException: Si el huésped no existe
+        HTTPException: Si el huésped no existe o los datos ya están en uso
     """
     current_user_id = get_current_user_id(request)
-    
     guest = db.query(Guest).filter(Guest.id == guest_id).first()
-    if not guest:
-        raise HTTPException(status_code=404, detail="Huésped no encontrado")
+    guest = validate_resource_exists(guest, get_custom_message("Guest", "not_found"))
+    validate_resource_not_deleted(guest, "huésped")
 
     update_data = guest_update.model_dump(exclude_unset=True)
     update_data["updated_by"] = current_user_id
+
+    if "email" in update_data and update_data["email"] != guest.email:
+        validate_unique_field(
+            db=db,
+            model_class=Guest,
+            field_name="email",
+            field_value=update_data["email"],
+            exclude_id=guest_id,
+            error_message=get_custom_message("Guest", "email_unique"),
+        )
+
+    if "document_no" in update_data and update_data["document_no"] != guest.document_no:
+        validate_unique_field(
+            db=db,
+            model_class=Guest,
+            field_name="document_no",
+            field_value=update_data["document_no"],
+            exclude_id=guest_id,
+            error_message=get_custom_message("Guest", "document_unique"),
+        )
 
     for key, value in update_data.items():
         setattr(guest, key, value)
@@ -123,8 +162,8 @@ def update_guest(
     db.refresh(guest)
     return guest
 
-
 @router.delete("/{guest_id}", status_code=status.HTTP_204_NO_CONTENT)
+@handle_database_errors
 def delete_guest(
     guest_id: UUID,
     request: Request,
@@ -144,23 +183,19 @@ def delete_guest(
         JSONResponse: Confirmación de eliminación
 
     Raises:
-        HTTPException: Si el huésped no existe o tiene reservas activas
+        HTTPException: Si el huésped no existe, ya está eliminado o tiene reservas activas
     """
     current_user_id = get_current_user_id(request)
-    
     guest = db.query(Guest).filter(Guest.id == guest_id).first()
-    if not guest:
-        raise HTTPException(status_code=404, detail="Huésped no encontrado")
+    guest = validate_resource_exists(guest, get_custom_message("Guest", "not_found"))
+    validate_resource_not_deleted(guest, "huésped")
 
     reservation = (
         db.query(Reservation)
         .filter(
             Reservation.guest_id == guest_id,
             Reservation.status.notin_(
-                [
-                    ReservationStatus.CANCELLED.value,
-                    ReservationStatus.CHECKED_OUT.value,
-                ]
+                [ReservationStatus.CANCELLED, ReservationStatus.CHECKED_OUT]
             ),
         )
         .first()
