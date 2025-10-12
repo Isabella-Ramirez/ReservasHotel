@@ -1,6 +1,0 @@
-FastAPI
-SQLAlchemy
-python-dotenv
-uvicorn
-pydantic
-pyodbc
