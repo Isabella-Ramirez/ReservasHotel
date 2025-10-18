@@ -77,11 +77,11 @@ CREATE TABLE IF NOT EXISTS guests (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   first_name    TEXT NOT NULL,
   last_name     TEXT NOT NULL,
-  email         CITEXT NULL,
+  email         CITEXT UNIQUE NOT NULL,
   phone         TEXT NULL,
   birth_date    DATE NULL,
-  document_kind document_type NULL,
-  document_no   TEXT NULL,
+  document_kind document_type NOT NULL,
+  document_no   TEXT UNIQUE NOT NULL,
   user_id       UUID NULL UNIQUE,  -- un huésped puede tener a lo sumo un usuario
   -- Dirección básica opcional
   country       TEXT NULL,
@@ -112,8 +112,7 @@ CREATE TABLE IF NOT EXISTS room_types (
   code               TEXT UNIQUE NOT NULL,     -- e.g., STD-KING, DLX-QUEEN
   name               TEXT NOT NULL,
   description        TEXT,
-  capacity_adults    SMALLINT NOT NULL CHECK (capacity_adults >= 0),
-  capacity_children  SMALLINT NOT NULL CHECK (capacity_children >= 0),
+  max_guests         SMALLINT NOT NULL CHECK (max_guests > 0),
   base_rate          NUMERIC(12,2) NOT NULL DEFAULT 0.00,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by         UUID NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -148,23 +147,29 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 -- Reservas
 -- =========================
 CREATE TABLE IF NOT EXISTS reservations (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code            TEXT UNIQUE NOT NULL,              -- localizador/PNR
-  status          reservation_status NOT NULL DEFAULT 'PENDING',
-  checkin_date    DATE NOT NULL,
-  checkout_date   DATE NOT NULL,
-  channel         TEXT NULL,                         -- web, phone, OTA, etc.
-  notes           TEXT NULL,
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code              TEXT UNIQUE NOT NULL,              -- localizador/PNR
+  status            reservation_status NOT NULL DEFAULT 'PENDING',
+  primary_guest_id  UUID NOT NULL REFERENCES guests(id) ON DELETE RESTRICT,
+  room_type_id      UUID NOT NULL REFERENCES room_types(id) ON DELETE RESTRICT,
+  room_id           UUID NULL REFERENCES rooms(id) ON DELETE SET NULL,
+  check_in_date     DATE NOT NULL,
+  check_out_date    DATE NOT NULL,
+  guest_count       SMALLINT NOT NULL CHECK (guest_count > 0),
+  nightly_rate      NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+  total_amount      NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+  channel           TEXT NULL,                         -- web, phone, OTA, etc.
+  notes             TEXT NULL,
 
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
-  deleted_at      TIMESTAMPTZ NULL DEFAULT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by        UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by        UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+  deleted_at        TIMESTAMPTZ NULL DEFAULT NULL,
 
-  CONSTRAINT chk_res_dates CHECK (checkout_date > checkin_date)
+  CONSTRAINT chk_res_dates CHECK (check_out_date > check_in_date)
 );
-CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(checkin_date, checkout_date);
+CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(check_in_date, check_out_date);
 CREATE INDEX IF NOT EXISTS idx_reservations_deleted_at ON reservations (deleted_at);
 CREATE TRIGGER trg_reservations_updated_at
 BEFORE UPDATE ON reservations
@@ -180,23 +185,6 @@ CREATE TABLE IF NOT EXISTS reservation_guests (
 CREATE INDEX IF NOT EXISTS idx_res_guest_guest ON reservation_guests(guest_id);
 
 -- Habitaciones asignadas a una reserva (soporta multi-habitación)
-CREATE TABLE IF NOT EXISTS reservation_rooms (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  reservation_id   UUID NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
-  room_id          UUID NULL REFERENCES rooms(id) ON DELETE SET NULL, -- puede asignarse más tarde
-  room_type_id     UUID NOT NULL REFERENCES room_types(id) ON DELETE RESTRICT,
-  start_date       DATE NOT NULL,
-  end_date         DATE NOT NULL,
-  nightly_rate     NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-  adults           SMALLINT NOT NULL DEFAULT 1 CHECK (adults >= 0),
-  children         SMALLINT NOT NULL DEFAULT 0 CHECK (children >= 0),
-  notes            TEXT NULL,
-  CONSTRAINT chk_rr_dates CHECK (end_date > start_date)
-);
-CREATE INDEX IF NOT EXISTS idx_rr_res ON reservation_rooms(reservation_id);
-CREATE INDEX IF NOT EXISTS idx_rr_room ON reservation_rooms(room_id);
-CREATE INDEX IF NOT EXISTS idx_rr_dates ON reservation_rooms(start_date, end_date);
-
 -- Pagos
 CREATE TABLE IF NOT EXISTS payments (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -206,13 +194,13 @@ CREATE TABLE IF NOT EXISTS payments (
   method          TEXT NOT NULL,                -- tarjeta, efectivo, transferencia, etc.
   status          payment_status NOT NULL DEFAULT 'PENDING',
   paid_at         TIMESTAMPTZ NULL,
-  reference       TEXT NULL,
   notes           TEXT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
-  deleted_at      TIMESTAMPTZ NULL DEFAULT NULL
+  deleted_at      TIMESTAMPTZ NULL DEFAULT NULL,
+  CONSTRAINT uq_payments_reservation UNIQUE (reservation_id)
 );
 CREATE INDEX IF NOT EXISTS idx_payments_res ON payments(reservation_id);
 CREATE INDEX IF NOT EXISTS idx_payments_deleted_at ON payments (deleted_at);
