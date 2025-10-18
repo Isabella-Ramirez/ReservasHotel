@@ -12,7 +12,6 @@ from app.tools.error_handlers import (
     handle_database_errors,
     validate_resource_exists,
     validate_unique_field,
-    validate_resource_not_deleted,
     get_custom_message,
 )
 
@@ -42,7 +41,7 @@ def create_room(
     Raises:
         HTTPException: Si el número de habitación ya existe
     """
-    current_user_id = get_current_user_id(request)
+    current_user_uuid = UUID(str(get_current_user_id(request)))
 
     validate_unique_field(
         db=db,
@@ -54,8 +53,8 @@ def create_room(
 
     new_room = Room(
         **room.model_dump(),
-        created_by=current_user_id,
-        updated_by=current_user_id,
+        created_by=current_user_uuid,
+        updated_by=current_user_uuid,
     )
     db.add(new_room)
     db.commit()
@@ -140,11 +139,10 @@ def update_room(
     Raises:
         HTTPException: Si la habitación no existe
     """
-    current_user_id = get_current_user_id(request)
+    current_user_uuid = UUID(str(get_current_user_id(request)))
 
     room = db.query(Room).filter(Room.id == room_id).first()
     room = validate_resource_exists(room, get_custom_message("Room", "not_found"))
-    validate_resource_not_deleted(room, "habitación")
 
     if room_update.room_number and room_update.room_number != room.room_number:
         validate_unique_field(
@@ -157,7 +155,7 @@ def update_room(
         )
 
     update_data = room_update.model_dump(exclude_unset=True)
-    update_data["updated_by"] = current_user_id
+    update_data["updated_by"] = current_user_uuid
 
     for key, value in update_data.items():
         setattr(room, key, value)
@@ -167,7 +165,7 @@ def update_room(
     return room
 
 
-@router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{room_id}", status_code=status.HTTP_200_OK)
 @handle_database_errors
 def delete_room(
     room_id: UUID,
@@ -190,23 +188,28 @@ def delete_room(
     Raises:
         HTTPException: Si la habitación no existe o tiene reservas activas
     """
-    current_user_id = get_current_user_id(request)
+    current_user_uuid = UUID(str(get_current_user_id(request)))
 
     room = db.query(Room).filter(Room.id == room_id).first()
     room = validate_resource_exists(room, get_custom_message("Room", "not_found"))
-    validate_resource_not_deleted(room, "habitación")
 
-    reservation = (
-        db.query(Reservation)
+    active_reservation = (
+        db.query(Reservation.id)
         .filter(
             Reservation.room_id == room_id,
-            Reservation.status != ReservationStatus.CANCELLED,
-            Reservation.status != ReservationStatus.CHECKED_OUT,
+            Reservation.deleted_at.is_(None),
+            Reservation.status.in_(
+                [
+                    ReservationStatus.PENDING,
+                    ReservationStatus.CONFIRMED,
+                    ReservationStatus.CHECKED_IN,
+                ]
+            ),
         )
         .first()
     )
 
-    if reservation:
+    if active_reservation:
         raise HTTPException(
             status_code=400,
             detail="No se puede eliminar la habitación con reservas activas",
@@ -214,7 +217,7 @@ def delete_room(
 
     current_time = datetime.now(timezone.utc)
     setattr(room, "deleted_at", current_time)
-    setattr(room, "updated_by", current_user_id)
+    setattr(room, "updated_by", current_user_uuid)
 
     db.commit()
     return JSONResponse(content={"detail": "Habitación eliminada correctamente"})

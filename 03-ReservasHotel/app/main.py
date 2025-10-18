@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, APIRouter
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from app.database import test_connection
 from app.endpoints import auth, guests, reservations, roles, rooms, users
 from app.middleware.auth_middleware import AuthMiddleware
+from app.tools.error_handlers import format_validation_error
 from scripts.migrate_database import auto_setup_database
 
 
@@ -81,6 +84,12 @@ api_router.include_router(rooms.router)
 api_router.include_router(reservations.router)
 
 app.include_router(api_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    status_code, detail = format_validation_error(exc)
+    return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
 @app.get("/", tags=["Root"])

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -9,12 +9,11 @@ from app.database import get_db
 from app.models.user import User, UserCreate, UserResponse, UserUpdate
 from app.tools.auth import get_password_hash, get_current_user_id
 from app.tools.error_handlers import (
+    get_custom_message,
     handle_database_errors,
+    validate_not_self_action,
     validate_resource_exists,
     validate_unique_field,
-    validate_not_self_action,
-    validate_resource_not_deleted,
-    get_custom_message,
 )
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -41,7 +40,7 @@ def create_user(
     Raises:
         HTTPException: Si hay errores de validación, email duplicado o role_id inválido
     """
-    current_user_id = get_current_user_id(request)
+    current_user_uuid = UUID(str(get_current_user_id(request)))
 
     validate_unique_field(
         db=db,
@@ -57,7 +56,7 @@ def create_user(
         full_name=user_data.full_name,
         role_id=user_data.role_id,
         is_active=user_data.is_active,
-        created_by=current_user_id,
+        created_by=current_user_uuid,
     )
 
     db.add(user)
@@ -66,7 +65,7 @@ def create_user(
     return user
 
 
-@router.get("", response_model=List[UserResponse])
+@router.get("", response_model=list[UserResponse])
 @handle_database_errors
 def get_users(
     is_active: Optional[bool] = Query(None, description="Filtrar por estado activo"),
@@ -137,7 +136,7 @@ def update_user(
     Raises:
         HTTPException: Si el usuario no existe, email duplicado o datos inválidos
     """
-    current_user_id = get_current_user_id(request)
+    current_user_uuid = UUID(str(get_current_user_id(request)))
 
     user = db.query(User).filter(User.id == user_id).first()
     user = validate_resource_exists(user, get_custom_message("User", "not_found"))
@@ -157,7 +156,7 @@ def update_user(
     if "password" in update_data:
         update_data["password_hash"] = get_password_hash(update_data.pop("password"))
 
-    update_data["updated_by"] = current_user_id
+    update_data["updated_by"] = current_user_uuid
 
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -185,23 +184,21 @@ def delete_user(
     Raises:
         HTTPException: Si el usuario no existe, auto-eliminación o errores de BD
     """
-    current_user_id = get_current_user_id(request)
+    current_user_uuid = UUID(str(get_current_user_id(request)))
 
     user = db.query(User).filter(User.id == user_id).first()
     user = validate_resource_exists(user, get_custom_message("User", "not_found"))
 
     validate_not_self_action(
-        current_user_id=current_user_id,
+        current_user_id=str(current_user_uuid),
         target_user_id=str(user.id),
         detail=get_custom_message("User", "self_delete"),
     )
 
-    validate_resource_not_deleted(user, "usuario")
-
     current_time = datetime.now(timezone.utc)
     setattr(user, "is_active", False)
     setattr(user, "deleted_at", current_time)
-    setattr(user, "updated_by", current_user_id)
+    setattr(user, "updated_by", current_user_uuid)
 
     db.commit()
     return JSONResponse(content={"detail": "Usuario eliminado correctamente"})
