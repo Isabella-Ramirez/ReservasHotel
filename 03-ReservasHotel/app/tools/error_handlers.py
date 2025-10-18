@@ -1,16 +1,18 @@
 """Utilidades para manejo consistente de errores en los endpoints."""
 
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Union, overload
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 
 F = TypeVar("F", bound=Callable[..., Any])
+T = TypeVar("T")
 
 
 CUSTOM_ERROR_MESSAGES: Dict[str, Dict[str, str]] = {
@@ -24,6 +26,7 @@ CUSTOM_ERROR_MESSAGES: Dict[str, Dict[str, str]] = {
     "Guest": {
         "email_unique": "Ya existe un huésped con este correo",
         "document_unique": "Ya existe un huésped con este documento",
+        "user_unique": "Ya existe un huésped asociado a este usuario",
         "not_found": "Huésped no encontrado",
         "already_deleted": "El huésped ya está eliminado",
     },
@@ -109,7 +112,9 @@ def _handle_value_error(error: ValueError) -> HTTPException:
     return HTTPException(status.HTTP_400_BAD_REQUEST, "Datos inválidos")
 
 
-def _handle_validation_error(error: ValidationError) -> HTTPException:
+def format_validation_error(
+    error: Union[ValidationError, RequestValidationError],
+) -> Tuple[int, str]:
     details = error.errors()
     if details:
         first = details[0]
@@ -117,16 +122,18 @@ def _handle_validation_error(error: ValidationError) -> HTTPException:
         error_type = first.get("type")
 
         if error_type == "missing":
-            return HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                f"El campo '{field}' es obligatorio",
-            )
+            return status.HTTP_422_UNPROCESSABLE_ENTITY, f"El campo '{field}' es obligatorio"
         if error_type == "value_error.email":
-            return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Formato de email inválido")
+            return status.HTTP_422_UNPROCESSABLE_ENTITY, "Formato de email inválido"
         if error_type == "value_error.uuid":
-            return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Formato de UUID inválido")
+            return status.HTTP_422_UNPROCESSABLE_ENTITY, "Formato de UUID inválido"
 
-    return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Error de validación de datos")
+    return status.HTTP_422_UNPROCESSABLE_ENTITY, "Error de validación de datos"
+
+
+def _handle_validation_error(error: ValidationError) -> HTTPException:
+    status_code, detail = format_validation_error(error)
+    return HTTPException(status_code, detail)
 
 
 def handle_database_errors(func: F) -> F:
@@ -184,9 +191,14 @@ def validate_uuid_format(uuid_str: str, field_name: str = "ID") -> UUID:
             f"Formato de {field_name} inválido",
         )
 
+@overload  
+def validate_resource_exists(resource: T, detail: str = "Recurso no encontrado") -> T: ...
 
-def validate_resource_exists(resource: Any, detail: str = "Recurso no encontrado") -> Any:
-    if not resource:
+@overload
+def validate_resource_exists(resource: None, detail: str = "Recurso no encontrado") -> None: ...
+
+def validate_resource_exists(resource: Optional[T], detail: str = "Recurso no encontrado") -> T:
+    if resource is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail)
     return resource
 
@@ -227,19 +239,3 @@ def validate_not_self_action(
             status.HTTP_400_BAD_REQUEST,
             detail,
         )
-
-
-def validate_resource_not_deleted(resource: Any, resource_name: str = "recurso") -> Any:
-    if getattr(resource, "is_active", True) is False:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"El {resource_name} ya está eliminado",
-        )
-
-    if getattr(resource, "deleted_at", None) is not None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"El {resource_name} ya está eliminado",
-        )
-
-    return resource
