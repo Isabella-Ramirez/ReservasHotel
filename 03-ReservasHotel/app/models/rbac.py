@@ -3,8 +3,9 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func, text
 from app.database import Base
 
@@ -13,35 +14,35 @@ class Role(Base):
     __tablename__ = "roles"
     __table_args__ = {"extend_existing": True}
 
-    id = Column(
+    id: Mapped[UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    code = Column(String, unique=True, nullable=False)
-    name = Column(String, nullable=False)
-    created_at = Column(
+    code: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
-    created_by = Column(
+    created_by: Mapped[Optional[UUID]] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
     )
-    updated_by = Column(
+    updated_by: Mapped[Optional[UUID]] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    deleted_at = Column(
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         default=None,

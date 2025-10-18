@@ -4,8 +4,9 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import Column, Date, DateTime, ForeignKey, String
+from sqlalchemy import Date, DateTime, ForeignKey, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func, text
 
 from app.database import Base
@@ -30,51 +31,51 @@ class Guest(Base):
     __tablename__ = "guests"
     __table_args__ = {"extend_existing": True}
 
-    id = Column(
+    id: Mapped[UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    first_name = Column(String, nullable=False)
-    last_name = Column(String, nullable=False)
-    email = Column(postgresql.CITEXT, nullable=True, unique=False)
-    phone = Column(String, nullable=True)
-    birth_date = Column(Date, nullable=True)
-    document_kind = Column(
+    first_name: Mapped[str] = mapped_column(String, nullable=False)
+    last_name: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(postgresql.CITEXT, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    document_kind: Mapped[Optional[DocumentType]] = mapped_column(
         postgresql.ENUM(DocumentType, name="document_type", create_type=True),
         nullable=True,
     )
-    document_no = Column(String, nullable=True)
-    user_id = Column(
+    document_no: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    user_id: Mapped[Optional[UUID]] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         unique=True,
         nullable=True,
     )
-    country = Column(String, nullable=True)
-    city = Column(String, nullable=True)
-    address_line = Column(String, nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    address_line: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    created_by = Column(
+    created_by: Mapped[Optional[UUID]] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
     )
-    updated_by = Column(
+    updated_by: Mapped[Optional[UUID]] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    deleted_at = Column(
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         default=None,
@@ -98,6 +99,7 @@ class GuestBase(BaseModel):
     country: Optional[str] = Field(None, description="País")
     city: Optional[str] = Field(None, description="Ciudad")
     address_line: Optional[str] = Field(None, description="Dirección")
+    user_id: Optional[UUID] = Field(None, description="ID del usuario asociado")
 
 
 class GuestCreate(GuestBase):
@@ -119,6 +121,7 @@ class GuestUpdate(BaseModel):
     country: Optional[str] = None
     city: Optional[str] = None
     address_line: Optional[str] = None
+    user_id: Optional[UUID] = None
 
 
 class GuestResponse(GuestBase):
@@ -130,3 +133,4 @@ class GuestResponse(GuestBase):
 
     class Config:
         from_attributes = True
+
