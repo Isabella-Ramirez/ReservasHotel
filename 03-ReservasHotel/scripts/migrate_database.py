@@ -105,8 +105,9 @@ def seed_sample_data() -> None:
             receptionist_role = (
                 db.query(Role).filter(Role.code == "RECEPTIONIST").first()
             )
+            guest_role = db.query(Role).filter(Role.code == "GUEST").first()
 
-            if not admin_role or not receptionist_role:
+            if not admin_role or not receptionist_role or not guest_role:
                 raise ValueError(
                     "No se encontraron los roles requeridos (ADMIN, RECEPTIONIST)"
                 )
@@ -126,6 +127,13 @@ def seed_sample_data() -> None:
                     role_id=receptionist_role.id,
                     is_active=True,
                 ),
+                User(
+                    email="anamartinez@guests.com",
+                    password_hash="$2b$12$LI7/rIFV9YIZFZ7NwfBlBOslPZeH60ZPN1q4Y5r4oqqRqVr1eAmC.",
+                    full_name="Ana Martínez",
+                    role_id=guest_role.id,
+                    is_active=True,
+                )
             ]
             db.add_all(users)
             db.flush()
@@ -137,24 +145,21 @@ def seed_sample_data() -> None:
                     code="STD-KING",
                     name="Standard King",
                     description="Habitación estándar con cama king size",
-                    capacity_adults=2,
-                    capacity_children=1,
+                    max_guests=3,
                     base_rate=80.00,
                 ),
                 RoomType(
                     code="DLX-QUEEN",
                     name="Deluxe Queen",
                     description="Habitación deluxe con cama queen size",
-                    capacity_adults=2,
-                    capacity_children=2,
+                    max_guests=4,
                     base_rate=120.00,
                 ),
                 RoomType(
                     code="SUITE",
                     name="Suite Ejecutiva",
                     description="Suite ejecutiva con sala de estar",
-                    capacity_adults=4,
-                    capacity_children=2,
+                    max_guests=6,
                     base_rate=200.00,
                 ),
             ]
@@ -251,6 +256,7 @@ def seed_sample_data() -> None:
                     phone="+1-555-0103",
                     country="Colombia",
                     city="Bogotá",
+                    user_id=users[2].id
                 ),
                 Guest(
                     first_name="Carlos Alberto",

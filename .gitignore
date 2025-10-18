@@ -25,3 +25,7 @@ venv.bak/
 __pycache__/
 /.venv
 .setup-mssql.sh
+
+# Python virtual environments
+venv/
+hotelenv/
