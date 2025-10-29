@@ -1,0 +1,21 @@
+.git
+.gitmodules
+.github/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+
+# Environment files and virtual envs
+.env
+.venv/
+venv/
+env/
+hotelenv/
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Logs
+*.log

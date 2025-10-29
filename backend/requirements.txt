@@ -1,0 +1,11 @@
+FastAPI
+SQLAlchemy
+python-dotenv
+uvicorn
+pydantic
+pydantic[email]
+psycopg[binary]
+alembic
+PyJWT[crypto]
+bcrypt
+python-multipart
