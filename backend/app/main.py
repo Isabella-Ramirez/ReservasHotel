@@ -3,6 +3,7 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from app.database import test_connection
 from app.endpoints import auth, guests, reservations, roles, rooms, users
 from app.middleware.auth_middleware import AuthMiddleware
@@ -72,6 +73,20 @@ app.openapi = custom_openapi
 Agrega el middleware de autenticación a la aplicación FastAPI.
 Este middleware protege los endpoints según las reglas definidas en AuthMiddleware.
 """
+
+origins = [
+    "http://localhost:3000",
+    "http://localhost:5173"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_middleware(AuthMiddleware)
 
 api_router = APIRouter(prefix="/api")

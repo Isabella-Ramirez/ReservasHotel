@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -49,11 +49,22 @@ class Role(Base):
     )
 
 
+class TokenUserInfo(BaseModel):
+    """Información básica del usuario adjunta al token."""
+
+    id: UUID
+    email: EmailStr
+    full_name: str
+    role_id: UUID
+    role_code: str
+
+
 class TokenResponse(BaseModel):
-    """Modelo de respuesta para tokens de autenticación."""
+    """Modelo de respuesta para inicio de sesión y registro."""
 
     access_token: str
-    token_type: str = "bearer"
+    expires_at: int
+    user: TokenUserInfo
 
 
 class RoleBase(BaseModel):

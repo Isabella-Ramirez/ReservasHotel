@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.guest import Guest
-from app.models.rbac import Role, TokenResponse
+from app.models.rbac import Role, TokenResponse, TokenUserInfo
 from app.models.user import User, UserLogin, UserRegistration, UserResponse
 from app.tools.auth import (
     create_access_token,
@@ -85,8 +85,18 @@ def register_user(payload: UserRegistration, db: Session = Depends(get_db)) -> T
     db.add(new_guest)
     db.commit()
 
-    access_token = create_access_token(subject=str(new_user.id))
-    return TokenResponse(access_token=access_token)
+    access_token, expires_at = create_access_token(subject=str(new_user.id))
+    return TokenResponse(
+        access_token=access_token,
+        expires_at=expires_at,
+        user=TokenUserInfo(
+            id=new_user.id,
+            email=new_user.email,
+            full_name=new_user.full_name,
+            role_id=new_user.role_id,
+            role_code=guest_role.code,
+        ),
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -111,8 +121,25 @@ def login_user(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenRe
             status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inactivo"
         )
 
-    access_token = create_access_token(subject=str(user.id))
-    return TokenResponse(access_token=access_token)
+    role = (
+        db.query(Role)
+        .filter(Role.id == user.role_id)
+        .first()
+    )
+    role = validate_resource_exists(role, get_custom_message("Role", "not_found"))
+
+    access_token, expires_at = create_access_token(subject=str(user.id))
+    return TokenResponse(
+        access_token=access_token,
+        expires_at=expires_at,
+        user=TokenUserInfo(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            role_id=user.role_id,
+            role_code=role.code,
+        ),
+    )
 
 
 @router.get("/me", response_model=UserResponse)
